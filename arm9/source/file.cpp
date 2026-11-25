@@ -1,0 +1,385 @@
+/* REminiscence - Flashback interpreter
+ * Copyright (C) 2005-2011 Gregory Montoir
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <stdlib.h>
+#include <string.h>
+#include "fs.h"
+#ifdef USE_ZLIB
+#include "zlib.h"
+#endif
+#include "file.h"
+
+// Files up to this size are read fully into RAM on open (0 disables).
+#ifndef FILE_PRELOAD_MAX
+#define FILE_PRELOAD_MAX (128 * 1024)
+#endif
+
+// Window size used for larger files (multiple of 512).
+#ifndef FILE_BUF_SIZE
+#define FILE_BUF_SIZE (32 * 1024)
+#endif
+
+
+struct File_impl {
+	bool _ioErr;
+	File_impl() : _ioErr(false) {}
+	virtual ~File_impl() {}
+	virtual bool open(const char *path, const char *mode) = 0;
+	virtual void close() = 0;
+	virtual uint32 size() = 0;
+	virtual void seek(int32 off) = 0;
+	virtual void read(void *ptr, uint32 len) = 0;
+	virtual void write(void *ptr, uint32 len) = 0;
+};
+
+struct stdFile : File_impl {
+	FILE *_fp;
+	stdFile() : _fp(0) {}
+	bool open(const char *path, const char *mode) {
+		_ioErr = false;
+		_fp = fopen(path, mode);
+		return (_fp != 0);
+	}
+	void close() {
+		if (_fp) {
+			fclose(_fp);
+			_fp = 0;
+		}
+	}
+	uint32 size() {
+		uint32 sz = 0;
+		if (_fp) {
+			int pos = ftell(_fp);
+			fseek(_fp, 0, SEEK_END);
+			sz = ftell(_fp);
+			fseek(_fp, pos, SEEK_SET);
+		}
+		return sz;
+	}
+	void seek(int32 off) {
+		if (_fp) {
+			fseek(_fp, off, SEEK_SET);
+		}
+	}
+	void read(void *ptr, uint32 len) {
+		if (_fp) {
+			uint32 r = fread(ptr, 1, len, _fp);
+			if (r != len) {
+				_ioErr = true;
+			}
+		}
+	}
+	void write(void *ptr, uint32 len) {
+		if (_fp) {
+			uint32 r = fwrite(ptr, 1, len, _fp);
+			if (r != len) {
+				_ioErr = true;
+			}
+		}
+	}
+};
+
+// Read-only file with a RAM cache: small files are fully preloaded,
+// larger ones are served through a sector-aligned window.
+struct bufFile : File_impl {
+	FILE *_fp;
+	uint8 *_buf;
+	uint32 _bufPos;  // file offset of _buf[0]
+	uint32 _bufLen;  // valid bytes in _buf
+	uint32 _pos;     // logical file position
+	uint32 _size;
+	bool _open;
+
+	bufFile() : _fp(0), _buf(0), _bufPos(0), _bufLen(0), _pos(0), _size(0), _open(false) {}
+
+	bool open(const char *path, const char *mode) {
+		_ioErr = false;
+		_bufPos = _bufLen = _pos = _size = 0;
+		_fp = fopen(path, mode);
+		if (!_fp) {
+			return false;
+		}
+		_open = true;
+		setvbuf(_fp, 0, _IONBF, 0); // avoid newlib's extra copy/buffer
+		fseek(_fp, 0, SEEK_END);
+		_size = ftell(_fp);
+		fseek(_fp, 0, SEEK_SET);
+		if (_size > 0 && _size <= (uint32)FILE_PRELOAD_MAX) {
+			_buf = (uint8 *)malloc(_size);
+			if (_buf) {
+				uint32 r = fread(_buf, 1, _size, _fp);
+				if (r == _size) {
+					_bufLen = _size;
+					fclose(_fp); // fully cached, no need to keep the handle
+					_fp = 0;
+					return true;
+				}
+				free(_buf);
+				_buf = 0;
+				fseek(_fp, 0, SEEK_SET);
+			}
+		}
+		_buf = (uint8 *)malloc(FILE_BUF_SIZE); // may fail: falls back to direct reads
+		return true;
+	}
+	void close() {
+		if (_fp) {
+			fclose(_fp);
+			_fp = 0;
+		}
+		free(_buf);
+		_buf = 0;
+		_bufPos = _bufLen = 0;
+		_open = false;
+	}
+	uint32 size() {
+		return _size;
+	}
+	void seek(int32 off) {
+		_pos = (uint32)off; // lazy, no I/O until the next read
+	}
+	void read(void *ptr, uint32 len) {
+		if (!_open) {
+			return;
+		}
+		uint8 *dst = (uint8 *)ptr;
+		while (len != 0) {
+			// serve from cache
+			if (_buf && _pos >= _bufPos && _pos < _bufPos + _bufLen) {
+				uint32 n = _bufPos + _bufLen - _pos;
+				if (n > len) {
+					n = len;
+				}
+				memcpy(dst, _buf + (_pos - _bufPos), n);
+				dst += n;
+				_pos += n;
+				len -= n;
+				continue;
+			}
+			if (!_fp) { // preloaded file and read past its end
+				_ioErr = true;
+				return;
+			}
+			// large read (or no window buffer): straight into caller's memory
+			if (!_buf || len >= (uint32)FILE_BUF_SIZE) {
+				fseek(_fp, _pos, SEEK_SET);
+				uint32 r = fread(dst, 1, len, _fp);
+				if (r != len) {
+					_ioErr = true;
+				}
+				_pos += r;
+				return;
+			}
+			// refill window, aligned to the sector size
+			_bufPos = _pos & ~511u;
+			fseek(_fp, _bufPos, SEEK_SET);
+			_bufLen = fread(_buf, 1, FILE_BUF_SIZE, _fp);
+			if (_pos >= _bufPos + _bufLen) {
+				_ioErr = true;
+				return;
+			}
+		}
+	}
+	void write(void *, uint32) {
+		_ioErr = true;
+	}
+};
+
+#ifdef USE_ZLIB
+struct zlibFile : File_impl {
+	gzFile _fp;
+	zlibFile() : _fp(0) {}
+	bool open(const char *path, const char *mode) {
+		_ioErr = false;
+		_fp = gzopen(path, mode);
+		return (_fp != 0);
+	}
+	void close() {
+		if (_fp) {
+			gzclose(_fp);
+			_fp = 0;
+		}
+	}
+	uint32 size() {
+		uint32 sz = 0;
+		if (_fp) {
+			int pos = gztell(_fp);
+			gzseek(_fp, 0, SEEK_END);
+			sz = gztell(_fp);
+			gzseek(_fp, pos, SEEK_SET);
+		}
+		return sz;
+	}
+	void seek(int32 off) {
+		if (_fp) {
+			gzseek(_fp, off, SEEK_SET);
+		}
+	}
+	void read(void *ptr, uint32 len) {
+		if (_fp) {
+			uint32 r = gzread(_fp, ptr, len);
+			if (r != len) {
+				_ioErr = true;
+			}
+		}
+	}
+	void write(void *ptr, uint32 len) {
+		if (_fp) {
+			uint32 r = gzwrite(_fp, ptr, len);
+			if (r != len) {
+				_ioErr = true;
+			}
+		}
+	}
+};
+#endif
+
+// read-only, non-update modes ("r", "rb") get the cached implementation
+static File_impl *createStdImpl(const char *mode) {
+	if (mode[0] == 'r' && strchr(mode, '+') == 0) {
+		return new bufFile;
+	}
+	return new stdFile;
+}
+
+
+File::File()
+	: _impl(0) {
+}
+
+File::~File() {
+	if (_impl) {
+		_impl->close();
+		delete _impl;
+	}
+}
+
+bool File::open(const char *filename, const char *mode, FileSystem *fs) {
+	if (_impl) {
+		_impl->close();
+		delete _impl;
+		_impl = 0;
+	}
+	assert(mode[0] != 'z');
+	_impl = createStdImpl(mode);
+	const char *path = fs->findPath(filename);
+	if (path) {
+		debug(DBG_FILE, "Open file name '%s' mode '%s' path '%s'", filename, mode, path);
+		return _impl->open(path, mode);
+	}
+	return false;
+}
+
+bool File::open(const char *filename, const char *mode, const char *directory) {
+	if (_impl) {
+		_impl->close();
+		delete _impl;
+		_impl = 0;
+	}
+#ifdef __NDS__
+	if (mode[0] == 'z') {
+#ifdef USE_ZLIB
+		_impl = new zlibFile;
+#endif
+		++mode;
+	}
+#else
+#ifdef USE_ZLIB
+	if (mode[0] == 'z') {
+		_impl = new zlibFile;
+		++mode;
+	}
+#endif
+#endif
+	if (!_impl) {
+		_impl = createStdImpl(mode);
+	}
+	char path[256];
+	snprintf(path, sizeof(path), "%s/%s", directory, filename);
+	debug(DBG_FILE, "Open file name '%s' mode '%s' path '%s'", filename, mode, path);
+	return _impl->open(path, mode);
+}
+
+void File::close() {
+	if (_impl) {
+		_impl->close();
+	}
+}
+
+bool File::ioErr() const {
+	return _impl ? _impl->_ioErr : true;
+}
+
+uint32 File::size() {
+	return _impl->size();
+}
+
+void File::seek(int32 off) {
+	_impl->seek(off);
+}
+
+void File::read(void *ptr, uint32 len) {
+	_impl->read(ptr, len);
+}
+
+uint8 File::readByte() {
+	uint8 b;
+	read(&b, 1);
+	return b;
+}
+
+uint16 File::readUint16LE() {
+	uint8 lo = readByte();
+	uint8 hi = readByte();
+	return (hi << 8) | lo;
+}
+
+uint32 File::readUint32LE() {
+	uint16 lo = readUint16LE();
+	uint16 hi = readUint16LE();
+	return (hi << 16) | lo;
+}
+
+uint16 File::readUint16BE() {
+	uint8 hi = readByte();
+	uint8 lo = readByte();
+	return (hi << 8) | lo;
+}
+
+uint32 File::readUint32BE() {
+	uint16 hi = readUint16BE();
+	uint16 lo = readUint16BE();
+	return (hi << 16) | lo;
+}
+
+void File::write(void *ptr, uint32 len) {
+	_impl->write(ptr, len);
+}
+
+void File::writeByte(uint8 b) {
+	write(&b, 1);
+}
+
+void File::writeUint16BE(uint16 n) {
+	writeByte(n >> 8);
+	writeByte(n & 0xFF);
+}
+
+void File::writeUint32BE(uint32 n) {
+	writeUint16BE(n >> 16);
+	writeUint16BE(n & 0xFFFF);
+}
