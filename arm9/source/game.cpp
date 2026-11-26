@@ -26,7 +26,8 @@
 #include "seq_player.h"
 
 extern uint8_t bZoomScreen;
-
+extern bool gameToLoad;
+extern int dampen_unzoom;
 
 Game::Game(SystemStub *stub, FileSystem *fs, const char *savePath, int level, ResourceType ver, Language lang)
 	: _cut(&_modPly, &_res, stub, &_vid), _menu(&_modPly, &_res, stub, &_vid),
@@ -40,9 +41,13 @@ Game::Game(SystemStub *stub, FileSystem *fs, const char *savePath, int level, Re
 	_skillLevel = 1;
 	_currentLevel = level;
     
-    // Try to restore last slot number
+    // Try to restore last level and slot number...
     FILE *fp = fopen("/flashback/LastSlot.dat", "rb");
-    if (fp) fread(&_stateSlot, 1, sizeof(_stateSlot), fp);
+    if (fp)
+    {
+        fread(&_stateSlot,      1, sizeof(_stateSlot),    fp);
+        if (gameToLoad) fread(&_currentLevel,   1, sizeof(_currentLevel), fp);
+    }
     fclose(fp);    
 }
 
@@ -167,6 +172,8 @@ ITCM_CODE void Game::mainLoop() {
 
 			}
 		}
+        
+        dampen_unzoom = 0;
         memcpy(_vid._frontLayer, _vid._backLayer, Video::GAMESCREEN_W * Video::GAMESCREEN_H);
 
 		pge_getInput();
@@ -242,7 +249,7 @@ void Game::playCutscene(int id) {
 		if (_res._hasSeqData) {
 			int num = 0;
 			switch (_cut._id) {
-			case 0x03: {
+			case 0x02: {
 					static const uint8 tab[] = { 1, 2, 1, 3, 3, 4, 4 };
 					num = tab[_currentLevel];
 				}
@@ -262,8 +269,6 @@ void Game::playCutscene(int id) {
 					num = tab[_currentLevel];
 				}
 				break;
-			case 0x3B:
-				return;
 			case 0x3C: {
 					static const uint8 tab[] = { 1, 1, 1, 1, 1, 2, 2 };
 					num = tab[_currentLevel];
@@ -318,9 +323,13 @@ void Game::inp_handleSpecialKeys() {
 	if (_stub->_pi.save) {
 		saveGameState(_stateSlot);
         
-        // Save last slot number
+        // Save last slot number and level...
         FILE *fp = fopen("/flashback/LastSlot.dat", "wb");
-        if (fp) fwrite(&_stateSlot, 1, sizeof(_stateSlot), fp);
+        if (fp)
+        {
+            fwrite(&_stateSlot,     1,  sizeof(_stateSlot),     fp);
+            fwrite(&_currentLevel,  1,  sizeof(_currentLevel),  fp);            
+        }
         fclose(fp);
         
 		_stub->_pi.save = false;
@@ -401,8 +410,10 @@ void Game::showFinalScore() {
 		_stub->copyRect(0, 0, Video::GAMESCREEN_W, Video::GAMESCREEN_H, _vid._frontLayer, 256);
 		_stub->updateScreen(0);
 		_stub->processEvents();
-		if (_stub->_pi.enter) {
+		if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
 			_stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
 			break;
 		}
 		_stub->sleep(100);
@@ -417,6 +428,8 @@ bool Game::handleConfigPanel() {
 	const int y = 10;
 	const int w = 17;
 	const int h = 12;
+    
+    bZoomScreen = 1;
 
 	_vid._charShadowColor = 0xE2;
 	_vid._charFrontColor = 0xEE;
@@ -451,7 +464,6 @@ bool Game::handleConfigPanel() {
 	enum { MENU_ITEM_LOAD = 1, MENU_ITEM_SAVE = 2, MENU_ITEM_ABORT = 3 };
 	uint8 colors[] = { 2, 3, 3, 3 };
 	int current = 0;
-    bZoomScreen = 1;
 	while (!_stub->_pi.quit) {
 		_menu.drawString(_res.getMenuString(LocaleData::LI_18_RESUME_GAME), y + 2, 9, colors[0]);
 		_menu.drawString(_res.getMenuString(LocaleData::LI_20_LOAD_GAME), y + 4, 9, colors[1]);
@@ -491,8 +503,10 @@ bool Game::handleConfigPanel() {
 		if (prev != current) {
 			SWAP(colors[prev], colors[current]);
 		}
-		if (_stub->_pi.enter) {
+		if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
 			_stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
 			switch (current) {
 			case MENU_ITEM_LOAD:
 				_stub->_pi.load = true;
@@ -504,13 +518,14 @@ bool Game::handleConfigPanel() {
 			break;
 		}
 	}
-    bZoomScreen = 0;
 	_vid.fullRefresh();
+    bZoomScreen = 0;
 	return (current == MENU_ITEM_ABORT);
 }
 
 bool Game::handleContinueAbort() {
 	playCutscene(0x48);
+    bZoomScreen = 1;
 	int timeout = 100;
 	int current_color = 0;
 	uint8 colors[] = { 0xE4, 0xE5 };
@@ -546,8 +561,11 @@ bool Game::handleContinueAbort() {
 				++current_color;
 			}
 		}
-		if (_stub->_pi.enter) {
+		if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
 			_stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
+            bZoomScreen = 0;
 			return (current_color == 0);
 		}
 		_stub->copyRect(0, 0, Video::GAMESCREEN_W, Video::GAMESCREEN_H, _vid._frontLayer, 256);
@@ -571,6 +589,7 @@ bool Game::handleContinueAbort() {
 		--timeout;
 		memcpy(_vid._frontLayer, _vid._tempLayer, Video::GAMESCREEN_W * Video::GAMESCREEN_H);
 	}
+    bZoomScreen = 0;
 	return false;
 }
 
@@ -1517,8 +1536,10 @@ void Game::handleInventory() {
 					}
 				}
 			}
-			if (_stub->_pi.enter) {
+			if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
 				_stub->_pi.enter = false;
+                _stub->_pi.space = false;
+                _stub->_pi.shift = false;
 				display_score = !display_score;
 			}
 		}

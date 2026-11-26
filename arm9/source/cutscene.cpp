@@ -24,8 +24,6 @@
 #include "video.h"
 #include "cutscene.h"
 
-extern uint8_t bZoomScreen;
-
 Cutscene::Cutscene(ModPlayer *ply, Resource *res, SystemStub *stub, Video *vid)
 	: _ply(ply), _res(res), _stub(stub), _vid(vid) {
 	memset(_palBuf, 0, sizeof(_palBuf));
@@ -944,7 +942,6 @@ void Cutscene::mainLoop(uint16 offset) {
 	_polPtr = _res->_pol;
 	debug(DBG_CUT, "_startOffset = %d offset = %d", _startOffset, offset);
 
-    bZoomScreen = 1;
 	while (!_stub->_pi.quit && !_interrupted && !_stop) {
 		uint8 op = fetchNextCmdByte();
 		debug(DBG_CUT, "Cutscene::play() opcode = 0x%X (%d)", op, (op >> 2));
@@ -962,7 +959,6 @@ void Cutscene::mainLoop(uint16 offset) {
 			_interrupted = true;
 		}
 	}
-    bZoomScreen = 0;
 	if (_interrupted || _id != 0x0D) {
 		_ply->stop();
 	}

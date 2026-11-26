@@ -14,6 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <nds.h>
 
 #include "mixer.h"
 #include "sfx_player.h"
@@ -23,7 +24,7 @@ SfxPlayer::SfxPlayer(Mixer *mixer)
     : _mod(0), _playing(false), _mix(mixer) {
 }
 
-void SfxPlayer::play(uint8 num) {
+ITCM_CODE void SfxPlayer::play(uint8 num) {
     debug(DBG_SFX, "SfxPlayer::play(%d)", num);
     if (!_playing) {
         if (num >= 68 && num <= 75) {
@@ -63,7 +64,7 @@ void SfxPlayer::playSample(int channel, const uint8 *sampleData, uint16 period) 
     si->data = sampleData;
 }
 
-void SfxPlayer::handleTick() {
+ITCM_CODE void SfxPlayer::handleTick() {
     if (!_playing) {
         return;
     }
@@ -108,7 +109,7 @@ void SfxPlayer::handleTick() {
     }
 }
 
-void SfxPlayer::mixSamples(int8 *buf, int samplesLen) {
+ITCM_CODE void SfxPlayer::mixSamples(int8 *buf, int samplesLen) {
     for (int i = 0; i < NUM_CHANNELS; ++i) {
         SampleInfo *si = &_samples[i];
         if (si->data) {
@@ -147,7 +148,7 @@ void SfxPlayer::mixSamples(int8 *buf, int samplesLen) {
     }
 }
 
-bool SfxPlayer::mix(int8 *buf, int len) {
+ITCM_CODE bool SfxPlayer::mix(int8 *buf, int len) {
     if (_playing) {
         memset(buf, 0, len);
         const int samplesPerTick = _mix->getSampleRate() / 50;

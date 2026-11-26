@@ -68,7 +68,8 @@ Mixer *theMixer;
 typedef struct {
   int x,y,w,h;
 } SDL_Rect;
-  
+
+int dampen_unzoom = 0;
 ITCM_CODE void vblankIntr() 
 {
     if(g_framePending == 2) {
@@ -79,6 +80,7 @@ ITCM_CODE void vblankIntr()
     // Antialias tile layer - just a bit of blurring to help vertical compression
     if (bZoomScreen)
     {
+        dampen_unzoom = 60;
         REG_BG2PA = xdxBG ; REG_BG2PB = 0; REG_BG2PC =0; REG_BG2PD = ydyBG_Zoomed; 
         REG_BG3PA = xdxBG;  REG_BG3PB = 0; REG_BG3PC =0; REG_BG3PD = ydyBG_Zoomed; 
 
@@ -87,11 +89,18 @@ ITCM_CODE void vblankIntr()
     }
     else
     {
-        REG_BG2PA = xdxBG ; REG_BG2PB = 0; REG_BG2PC =0; REG_BG2PD = ydyBG; 
-        REG_BG3PA = xdxBG;  REG_BG3PB = 0; REG_BG3PC =0; REG_BG3PD = ydyBG; 
-        
-        REG_BG2X = cxBG;    REG_BG2Y = 0x40;
-        REG_BG3X = cxBG;    REG_BG3Y = 0xC0;
+        if (dampen_unzoom)
+        {
+            dampen_unzoom--;
+        }
+        else
+        {
+            REG_BG2PA = xdxBG ; REG_BG2PB = 0; REG_BG2PC =0; REG_BG2PD = ydyBG; 
+            REG_BG3PA = xdxBG;  REG_BG3PB = 0; REG_BG3PC =0; REG_BG3PD = ydyBG; 
+            
+            REG_BG2X = cxBG;    REG_BG2Y = 0x40;
+            REG_BG3X = cxBG;    REG_BG3Y = 0xC0;
+        }
     }
 
   
@@ -451,19 +460,19 @@ ITCM_CODE void SystemStub_SDL::processEvents() {
   if ( (keys_up & KEY_RIGHT) ) {
     _pi.dirMask &=~PlayerInput::DIR_RIGHT;
   }
-  if ( (keys_up & (KEY_UP | KEY_Y) ) ) {
+  if ( (keys_up & (KEY_UP | KEY_X) ) ) {
     _pi.dirMask &=~PlayerInput::DIR_UP;
   }
   if ( (keys_up & KEY_DOWN) ) {
     _pi.dirMask &=~PlayerInput::DIR_DOWN;
   }
-  if ( (keys_up & KEY_X) ) {
+  if ( (keys_up & KEY_Y) ) {
     _pi.enter = false;
   }
-  if ( (keys_up & KEY_B) ) {
+  if ( (keys_up & KEY_A) ) {
     _pi.shift = false;
   }
-  if ( (keys_up & KEY_A) ) {
+  if ( (keys_up & KEY_B) ) {
     _pi.space = false;
   }
   if ( (keys_up & (KEY_R | KEY_START)) ) {
@@ -479,19 +488,19 @@ ITCM_CODE void SystemStub_SDL::processEvents() {
   if ( (keys_down & KEY_RIGHT) ) {
     _pi.dirMask |= PlayerInput::DIR_RIGHT;
   }
-  if ( (keys_down & (KEY_UP | KEY_Y) ) ) {
+  if ( (keys_down & (KEY_UP | KEY_X) ) ) {
     _pi.dirMask |= PlayerInput::DIR_UP;
   }
   if ( (keys_down & KEY_DOWN) ) {
     _pi.dirMask |= PlayerInput::DIR_DOWN;
   }
-  if ( (keys_down & KEY_X) ) {
+  if ( (keys_down & KEY_Y) ) {
     _pi.enter = true;
   }
-  if ( (keys_down & KEY_B) ) {
+  if ( (keys_down & KEY_A) ) {
     _pi.shift = true;
   }
-  if ( (keys_down & KEY_A) ) {
+  if ( (keys_down & KEY_B) ) {
     _pi.space = true;
   }
   if ( (keys_down & (KEY_R | KEY_START)) ) {
@@ -501,8 +510,8 @@ ITCM_CODE void SystemStub_SDL::processEvents() {
     _pi.escape = true;
   }
   
-  // The Y jump supersedes left/right
-  if (keys_down & KEY_Y)
+  // The X jump supersedes left/right
+  if (keys_down & KEY_X)
   {
       _pi.dirMask &=~PlayerInput::DIR_LEFT;
       _pi.dirMask &=~PlayerInput::DIR_RIGHT;

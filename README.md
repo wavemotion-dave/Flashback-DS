@@ -45,7 +45,7 @@ To hear background music during polygonal cutscenes, you'll need to copy the .mo
 	mod.flashback-teleporta
 	mod.flashback-voyage
     
-If you search for "Flashback Amiga ExoticA" you will be on your way to finding these mod files.
+If you search for "Flashback Amiga Exotica" you will be on your way to finding these mod files.
 
 Lastly, to hear voice during in-game dialogues, you'll need to copy the 'VOICE.VCE'
 file from the SegaCD version to the /FLASHBACK directory.  Good luck finding that one :)
@@ -57,14 +57,33 @@ To start the game, you must :
 - put the original game's datafiles in the directory named FLASHBACK
 - run Flashback-DS.nds
 
-Controls :
+# Controls
+
  * Direction pad : the joystick ... 
- * A           : draw/holster gun
- * B           : talk / use / run / shoot
- * X           : use the current inventory object
- * Y           : Jump (shortcut for D-Pad Up)
+ * A           : talk / use / run / shoot
+ * B           : draw/holster gun
+ * X           : Jump (shortcut for D-Pad Up)
+ * Y           : use the current inventory object
  * R / START   : display the inventory / skip movies
  * L / SELECT  : display the options menu
+ 
+ ![Instructions](images/instructions.png)
+ 
+Copyright :
+-----------------------
+Flashback-DS is Copyright (c) 2026 Dave Bernazzani (wavemotion-dave) and (c) 2011 by Alekmaul
+
+The original REminicense engine was released as GPL Version 2 - as such, this program follows suit. See copying.txt for details.
+
+As long as there is no commercial use (i.e. no profit is made),
+copying and distribution of this emulator, it's source code
+and associated readme files, with or without modification, 
+are permitted in any medium without royalty provided this 
+copyright notice and the GPL V2 notice is used and 
+wavemotion-dave (Phoenix Edition), Alekmaul (original port) and 
+Gregory Montoir (original REminicense engine) are thanked profusely.
+
+The Flashback-DS emulator is offered as-is, without any warranty.
  
 # Credits
 
@@ -80,18 +99,21 @@ Thanks Wintermute for devkitpro and libnds (http://www.devkitpro.org).
 
 # History 
 
-V1.2 : 25-Nov-2026 by wavemotion-dave
+V1.2 : 26-Nov-2026 by wavemotion-dave
   * Improved video playback - DS-Lite now runs at proper rate.
   * Fix to allow direct run on DSi from TWL++ or Unlaunch
   * Fix memory leak (was leaking almost 50K per cut-scene).
   * Added 'GAME SAVED' indication when saving.
   * Load Game now restores the last saved game slot you used.
   * Improved mixing of sound to help avoid clipping and reduce 'static'.
-  * Y button (Jump) overrides LEFT/RIGHT for smoother control.
+  * Swapped A/B buttons and X/Y to more closely resemble modern emulation button use (A being fire/use).
+  * X button (Jump) overrides LEFT/RIGHT for smoother control.
   * Menus now show in zoomed 1:1 resolution for improved clarity (you can read the text easily).
   * Cutscenes now zoom so that none of the 128 vertical pixel lines are compressed and lost.
+  * New DS specific instruction graphic shown instead of PC keyboard.
+  * You can generally use any of the NDS main buttons (A,B,Y) on any menu for ease-of-use.
 
-V1.1 : 09/10/2011
+V1.1 : 09/10/2011 by Alekmaul
   * Fix save/load problem
   * Invert A & X buttons, R instead of Y for inventory, Y to jump
   * Add confirmation before switching back to menu
@@ -100,6 +122,6 @@ V1.1 : 09/10/2011
   * Remove zlib include, useless for this version
   * Remove assertion with flag NDEBUG
 
-V1.0 : 24/07/2011
+V1.0 : 24/07/2011 by Alekmaul
   * Initial release based on REminiscence engine
   

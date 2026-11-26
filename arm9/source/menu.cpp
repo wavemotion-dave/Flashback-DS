@@ -103,12 +103,10 @@ void Menu::handleInfoScreen() {
     _vid->fadeOut();
     switch (_res->_lang) {
     case LANG_FR:
-        loadPicture("instru_f");
-        break;
     case LANG_EN:
     case LANG_DE:
     case LANG_SP:
-        loadPicture("instru_e");
+        loadPicture("inst_nds");
         break;
     }
     _vid->fullRefresh();
@@ -116,8 +114,11 @@ void Menu::handleInfoScreen() {
     do {
         _stub->sleep(EVENTS_DELAY);
         _stub->processEvents();
-        if (_stub->_pi.enter) {
+        
+        if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
             _stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
             break;
         }
     } while (!_stub->_pi.quit);
@@ -156,8 +157,10 @@ void Menu::handleSkillScreen(uint8 &new_skill) {
                 skill_level = 0;
             }
         }
-        if (_stub->_pi.enter) {
+        if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
             _stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
             new_skill = skill_level;
             return;
         }
@@ -207,8 +210,10 @@ bool Menu::handlePasswordScreen(uint8 &new_skill, uint8 &new_level) {
                 --len;
             }
         }
-        if (_stub->_pi.enter) {
+        if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
             _stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
             password[len] = '\0';
             for (int level = 0; level < 8; ++level) {
                 for (int skill = 0; skill < 3; ++skill) {
@@ -288,8 +293,10 @@ bool Menu::handleLevelScreen(uint8 &new_skill, uint8 &new_level) {
                 currentSkill = 0;
             }
         }
-        if (_stub->_pi.enter) {
+        if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
             _stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
             new_skill = currentSkill;
             new_level = currentLevel;
             return true;
@@ -362,8 +369,10 @@ bool Menu::handleTitleScreen(uint8 &new_skill, uint8 &new_level) {
                 menu_entry = 0;
             }
         }
-        if (_stub->_pi.enter) {
+        if (_stub->_pi.enter || _stub->_pi.space || _stub->_pi.shift) {
             _stub->_pi.enter = false;
+            _stub->_pi.space = false;
+            _stub->_pi.shift = false;
             selected_menu_entry = menu_entry;
         }
 

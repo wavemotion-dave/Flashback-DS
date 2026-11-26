@@ -14,12 +14,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+ 
+#include <nds.h>
 
 #include "file.h"
 #include "fs.h"
 #include "mixer.h"
 #include "seq_player.h"
 #include "systemstub.h"
+
+extern uint8_t bZoomScreen;
 
 bool SeqDemuxer::open(File *f) {
 	_f = f;
@@ -153,7 +157,7 @@ struct BitStream {
     uint32 _bits;
 };
 
-static const uint8 *decodeSeqOp1Helper(const uint8 *src, uint8 *dst, int dst_size) {
+ITCM_CODE static const uint8 *decodeSeqOp1Helper(const uint8 *src, uint8 *dst, int dst_size) {
     int codes[64];
     BitStream bs(src);
     int count = 0;
@@ -178,7 +182,7 @@ static const uint8 *decodeSeqOp1Helper(const uint8 *src, uint8 *dst, int dst_siz
     return src;
 }
 
-static const uint8 *decodeSeqOp1(uint8 *dst, int pitch, const uint8 *src) {
+ITCM_CODE static const uint8 *decodeSeqOp1(uint8 *dst, int pitch, const uint8 *src) {
     const int len = *src++;
     if (len & 0x80) {
         uint8 buf[8 * 8];
@@ -215,7 +219,7 @@ static const uint8 *decodeSeqOp1(uint8 *dst, int pitch, const uint8 *src) {
     return src;
 }
 
-static const uint8 *decodeSeqOp2(uint8 *dst, int pitch, const uint8 *src) {
+ITCM_CODE static const uint8 *decodeSeqOp2(uint8 *dst, int pitch, const uint8 *src) {
     for (int y = 0; y < 8; ++y) {
         memcpy(dst + y * pitch, src, 8);
         src += 8;
@@ -223,7 +227,7 @@ static const uint8 *decodeSeqOp2(uint8 *dst, int pitch, const uint8 *src) {
     return src;
 }
 
-static const uint8 *decodeSeqOp3(uint8 *dst, int pitch, const uint8 *src) {
+ITCM_CODE static const uint8 *decodeSeqOp3(uint8 *dst, int pitch, const uint8 *src) {
     int pos;
     do {
         pos = *src++;
@@ -242,7 +246,7 @@ SeqPlayer::SeqPlayer(SystemStub *stub, Mixer *mixer)
 SeqPlayer::~SeqPlayer() {
 }
 
-void SeqPlayer::play(File *f) {
+ITCM_CODE void SeqPlayer::play(File *f) {
     if (_demux.open(f)) {
         Color pal[256];
         for (int i = 0; i < 256; ++i) {
@@ -323,6 +327,8 @@ void SeqPlayer::play(File *f) {
                 if (clearScreen) {
                     clearScreen = false;
                     _stub->copyRect(0, 0, kVideoWidth, 224, _buf, 256);
+                    swiWaitForVBlank();
+                    bZoomScreen = 1;
                 } else {
                     _stub->copyRect(0, y0, kVideoWidth, kVideoHeight, _buf, 256);
                 }
@@ -333,6 +339,9 @@ void SeqPlayer::play(File *f) {
                 _stub->sleep(diff);
             }
         }
+        _stub->copyRect(0, 0, kVideoWidth, 224, _buf, 256);
+        swiWaitForVBlank();
+        bZoomScreen = 0;        
         for (int i = 0; i < 256; ++i) {
             _stub->setPaletteEntry(i, &pal[i]);
         }
@@ -350,7 +359,7 @@ void SeqPlayer::play(File *f) {
     }
 }
 
-bool SeqPlayer::mix(int8 *buf, int samples) {
+ITCM_CODE bool SeqPlayer::mix(int8 *buf, int samples) {
     if (_soundQueuePreloadSize < kSoundPreloadSize) {
         return true;
     }
@@ -368,7 +377,7 @@ bool SeqPlayer::mix(int8 *buf, int samples) {
     return true;
 }
 
-bool SeqPlayer::mixCallback(void *param, int8 *buf, int len) {
+ITCM_CODE bool SeqPlayer::mixCallback(void *param, int8 *buf, int len) {
     memset(buf, 0, len);
     return ((SeqPlayer *)param)->mix(buf, len);
 }
